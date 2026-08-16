@@ -11,22 +11,27 @@ public class TerrainGenerator : MonoBehaviour
     [Header("Noise")]
     public float noiseScale = 0.01f;
     public int octaves = 5;
+
     [Range(0f, 1f)]
     public float persistence = 0.5f;
+
     public float lacunarity = 2f;
 
     [Header("World")]
     public int seed = 12345;
-    public Vector2 offset;
+    public Vector2 worldOffset;
 
-    void Start()
+    private Terrain terrain;
+    private TerrainData terrainData;
+
+    void Awake()
     {
-        GenerateTerrain();
+        SetupTerrain();
     }
 
-    void GenerateTerrain()
+    void SetupTerrain()
     {
-        Terrain terrain = GetComponent<Terrain>();
+        terrain = GetComponent<Terrain>();
 
         if (terrain == null)
         {
@@ -34,81 +39,106 @@ public class TerrainGenerator : MonoBehaviour
             return;
         }
 
-        TerrainData terrainData = terrain.terrainData;
+        // Every chunk gets its OWN TerrainData.
+        if (terrain.terrainData != null)
+        {
+            terrainData = Instantiate(terrain.terrainData);
+            terrainData.name = "Chunk Terrain Data";
+        }
+        else
+        {
+            terrainData = new TerrainData();
+        }
 
         terrainData.heightmapResolution = heightmapResolution;
-        terrainData.size = new Vector3(width, terrainHeight, depth);
+        terrainData.size = new Vector3(
+            width,
+            terrainHeight,
+            depth
+        );
 
-        float[,] heights = new float[heightmapResolution, heightmapResolution];
+        terrain.terrainData = terrainData;
 
-        float maxNoiseHeight = float.MinValue;
-        float minNoiseHeight = float.MaxValue;
+        TerrainCollider collider =
+            GetComponent<TerrainCollider>();
 
-        System.Random random = new System.Random(seed);
+        if (collider != null)
+        {
+            collider.terrainData = terrainData;
+        }
+    }
 
-        float offsetX = random.Next(-100000, 100000) + offset.x;
-        float offsetZ = random.Next(-100000, 100000) + offset.y;
+    public void GenerateTerrain()
+    {
+        if (terrain == null || terrainData == null)
+        {
+            Debug.LogError("Terrain has not been set up.");
+            return;
+        }
 
-        // First pass: generate the raw noise.
-        float[,] noiseMap = new float[heightmapResolution, heightmapResolution];
+        float[,] heights =
+            new float[
+                heightmapResolution,
+                heightmapResolution
+            ];
+
+        float seedOffsetX = seed * 0.12345f;
+        float seedOffsetZ = seed * 0.67891f;
 
         for (int x = 0; x < heightmapResolution; x++)
         {
             for (int z = 0; z < heightmapResolution; z++)
             {
+                float worldX =
+                    worldOffset.x +
+                    (x / (float)(heightmapResolution - 1)) * width;
+
+                float worldZ =
+                    worldOffset.y +
+                    (z / (float)(heightmapResolution - 1)) * depth;
+
                 float amplitude = 1f;
                 float frequency = 1f;
-
                 float noiseHeight = 0f;
 
                 for (int i = 0; i < octaves; i++)
                 {
-                    float sampleX = (x / (float)(heightmapResolution - 1)) * width;
-                    float sampleZ = (z / (float)(heightmapResolution - 1)) * depth;
+                    float sampleX =
+                        worldX *
+                        noiseScale *
+                        frequency +
+                        seedOffsetX;
 
-                    sampleX = sampleX * noiseScale * frequency + offsetX;
-                    sampleZ = sampleZ * noiseScale * frequency + offsetZ;
+                    float sampleZ =
+                        worldZ *
+                        noiseScale *
+                        frequency +
+                        seedOffsetZ;
 
-                    float sample = Mathf.PerlinNoise(sampleX, sampleZ);
+                    float sample =
+                        Mathf.PerlinNoise(
+                            sampleX,
+                            sampleZ
+                        );
 
-                    noiseHeight += sample * amplitude;
+                    noiseHeight +=
+                        sample * amplitude;
 
                     amplitude *= persistence;
                     frequency *= lacunarity;
                 }
 
-                noiseMap[x, z] = noiseHeight;
-
-                if (noiseHeight > maxNoiseHeight)
-                    maxNoiseHeight = noiseHeight;
-
-                if (noiseHeight < minNoiseHeight)
-                    minNoiseHeight = noiseHeight;
-            }
-        }
-
-        // Second pass: normalize the noise.
-        for (int x = 0; x < heightmapResolution; x++)
-        {
-            for (int z = 0; z < heightmapResolution; z++)
-            {
-                float normalizedHeight =
-                    Mathf.InverseLerp(
-                        minNoiseHeight,
-                        maxNoiseHeight,
-                        noiseMap[x, z]
+                heights[z, x] =
+                    Mathf.Clamp01(
+                        noiseHeight / 2f
                     );
-
-                heights[z, x] = normalizedHeight;
             }
         }
 
-        terrainData.SetHeights(0, 0, heights);
-
-        Debug.Log(
-            $"Terrain generated. Seed: {seed}, " +
-            $"Size: {width}x{depth}, " +
-            $"Octaves: {octaves}"
+        terrainData.SetHeights(
+            0,
+            0,
+            heights
         );
     }
 }
