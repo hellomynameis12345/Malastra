@@ -49,6 +49,10 @@ public class PlayerMovement : MonoBehaviour
     movement *= moveSpeed;
 
     // Apply gravity
+    if (controller.isGrounded && verticalVelocity < 0)
+        {
+            verticalVelocity = -2f; // Small negative value to keep the player grounded 
+        }
     verticalVelocity += gravity * Time.deltaTime;
     movement.y = verticalVelocity;
 
